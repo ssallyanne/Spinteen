@@ -1,0 +1,48 @@
+name: seventeen_spinteen
+description: A random roulette app for SEVENTEEN variety shows.
+
+# 版本的格式為：版本號+內部構建號
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 用於系統語系自適應 (i18n)
+  flutter_localizations:
+    sdk: flutter
+
+  # 你要求的 YouTube 跳轉功能
+  url_launcher: ^6.1.0
+  http: ^1.1.0
+  google_fonts: ^6.2.1
+  flutter_dotenv: ^5.1.0
+  # iOS 風格圖標
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+# 資源配置區塊
+flutter:
+  uses-material-design: true
+
+  # 如果你要在輪盤中心放 Logo，必須在這裡聲明路徑
+  assets:
+    - assets/svt_logo.jpg
+    - assets/youtube_icon.png
+    - .env
+    # 你可以把 300 筆影片數據存在 JSON 裡讀取
+    # - assets/data.json 
+
+  # 如果你有自定義字體（如蘋果官方字體），也在這裡設定
+  # fonts:
+  #   - family: SFPro
+  #     fonts:
+  #       - asset: fonts/SF-Pro-Text-Regular.otf
+  
