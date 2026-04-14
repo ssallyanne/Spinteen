@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'models.dart';
 
 class YouTubeService {
@@ -8,63 +7,95 @@ class YouTubeService {
   factory YouTubeService() => _instance;
   YouTubeService._internal();
 
-  // 🚀 已更新為最新的 GOING SEVENTEEN 播放清單 ID
-  static final Map<String, String> playlistConfigs = {
-    "GOING SEVENTEEN (ALL)": "PLk_UmMfvZDx21Z9eEQ9DcIlUfZp1uwEup",
-    "GOING SEVENTEEN 2019": "PLk_UmMfvZDx2-r7Kt-k2GjtQcTecKAB6p",
-    "GOING SEVENTEEN 2020": "PLk_UmMfvZDx1Ug2GQ5NCijKz7Q3pmZLlT",
-  };
-
+  // 🚀 妳的 YouTube Data API Key
+  static const String _apiKey = 'AIzaSyBd7uiSlXvDPFYdMH0J9FBhleU2ZN1Fb7w';
+  
   static List<Episode> cachedEpisodes = [];
-
-  String get _apiKey => dotenv.get('YOUTUBE_API_KEY', fallback: "");
-
-  Future<void> init() async {
-    if (cachedEpisodes.isNotEmpty) return;
+  
+  /// 初始化指定團體的數據
+  Future<void> init(KPopGroup group) async {
+    cachedEpisodes.clear();
     
-    // 🚀 保底機制：確保即使 API 請求失敗，輪盤依然有資料可以旋轉
-    cachedEpisodes.add(Episode(
-      title: "[GOING SEVENTEEN] 測試影片 (API 加載失敗時顯示)",
-      category: "GOING SEVENTEEN",
-      youtubeUrl: "https://www.youtube.com/watch?v=s4jHQXd-7gg",
-      thumbnailUrl: "https://img.youtube.com/vi/s4jHQXd-7gg/maxresdefault.jpg",
-    ));
+    for (var entry in group.playlistConfigs.entries) {
+      String category = entry.key;
+      List<String> playlistIds = entry.value;
 
-    for (var entry in playlistConfigs.entries) {
-      try {
-        final episodes = await fetchFullPlaylist(entry.value, entry.key);
+      for (String playlistId in playlistIds) {
+        final episodes = await fetchPlaylist(playlistId, category);
         cachedEpisodes.addAll(episodes);
-      } catch (e) { 
-        // 妳可以在除錯時開啟這行查看錯誤原因
-        // print("抓取播放清單 ${entry.key} 失敗: $e"); 
       }
+    }
+    
+    // 如果最終緩存是空的，加入絕對不會 404 的 Base64 數據保底
+    if (cachedEpisodes.isEmpty) {
+      cachedEpisodes.add(Episode(
+        title: "暫無影片資料 (請確認 API 配額或 ID)",
+        category: group.name,
+        youtubeUrl: "https://www.youtube.com",
+        thumbnailUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", 
+      ));
     }
   }
 
-  Future<List<Episode>> fetchFullPlaylist(String playlistId, String categoryName) async {
-    List<Episode> results = [];
-    if (_apiKey.isEmpty) return [];
-
-    final url = 'https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=$playlistId&key=$_apiKey';
+  /// 抓取單一播放清單的內容
+  Future<List<Episode>> fetchPlaylist(String playlistId, String category) async {
+    // 🚀 1. 極致清洗與解析邏輯 (精準過濾 &si= 等參數)
+    String cleanId = playlistId.trim();
     
-    final response = await http.get(Uri.parse(url));
-    
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      for (var item in data['items']) {
-        final snippet = item['snippet'];
-        
-        // 過濾掉標題中可能包含 "Private video" 或 "Deleted video" 的項目
-        if (snippet['title'] == 'Private video' || snippet['title'] == 'Deleted video') continue;
-
-        results.add(Episode(
-          title: snippet['title'],
-          category: categoryName,
-          youtubeUrl: 'https://www.youtube.com/watch?v=${snippet['resourceId']['videoId']}',
-          thumbnailUrl: snippet['thumbnails']['high']?['url'] ?? '',
-        ));
-      }
+    if (cleanId.contains("list=")) {
+      // 先取 list= 之後的部分，再遇到 & 就切斷，確保只拿 ID
+      cleanId = cleanId.split("list=").last.split("&").first;
     }
-    return results;
+    
+    // 強力過濾：只保留 A-Z, a-z, 0-9, 底線, 橫線
+    cleanId = cleanId.replaceAll(RegExp(r'[^\w-]'), '');
+
+    if (cleanId.isEmpty) return [];
+
+    // 🚀 2. 使用 Uri 構建，並帶入隨機時間戳防止 404 被快取
+    final uri = Uri.https('www.googleapis.com', '/youtube/v3/playlistItems', {
+      'part': 'snippet',
+      'maxResults': '50',
+      'playlistId': cleanId,
+      'key': _apiKey,
+      '_t': DateTime.now().millisecondsSinceEpoch.toString(), 
+    });
+
+    try {
+      print('🚀 Requesting YouTube API: $cleanId');
+      final response = await http.get(uri);
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List items = data['items'] ?? [];
+
+        return items.map((item) {
+          final snippet = item['snippet'];
+          final thumbnails = snippet['thumbnails'];
+          final videoId = snippet['resourceId']['videoId'];
+          
+          // 層級式縮圖抓取，確保不論新舊影片都有圖顯示
+          String bestThumbnail = thumbnails['maxres']?['url'] ?? 
+                                thumbnails['high']?['url'] ?? 
+                                thumbnails['medium']?['url'] ?? 
+                                thumbnails['standard']?['url'] ?? 
+                                thumbnails['default']?['url'] ?? '';
+
+          return Episode(
+            title: snippet['title'],
+            category: category,
+            youtubeUrl: 'https://www.youtube.com/watch?v=$videoId',
+            thumbnailUrl: bestThumbnail,
+          );
+        }).toList();
+      } else {
+        // 如果報錯，在控制台印出具體原因方便排錯
+        print('❌ YouTube API Error [${response.statusCode}] for ID: $cleanId');
+        print('Error Reason: ${response.body}');
+      }
+    } catch (e) {
+      print('🌐 Network Error in fetchPlaylist: $e');
+    }
+    return [];
   }
 }

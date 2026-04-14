@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'theme.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
+import 'group_data.dart';
 import 'youtube_service.dart';
 
 class RoulettePage extends StatefulWidget {
@@ -20,22 +22,65 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
   Episode? _selectedVideo;
   int? _highlightedIndex;
 
+  KPopGroup currentGroup = GroupData.allGroups[0];
+
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: const Duration(seconds: 4));
     _animation = Tween<double>(begin: 0, end: 0).animate(_controller);
+    _initApp();
+  }
 
-    YouTubeService().init().then((_) {
-      if (YouTubeService.cachedEpisodes.isEmpty) {
-        YouTubeService.cachedEpisodes.add(Episode(
-          title: "EP.100 Labyrinth",
-          category: "GOING SEVENTEEN",
-          youtubeUrl: "https://www.youtube.com/watch?v=s4jHQXd-7gg",
-          thumbnailUrl: "https://img.youtube.com/vi/s4jHQXd-7gg/maxresdefault.jpg",
-        ));
+  Future<void> _initApp() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? savedId = prefs.getString('last_selected_group_id');
+    if (savedId != null) {
+      final savedGroup = GroupData.allGroups.firstWhere(
+        (g) => g.id == savedId,
+        orElse: () => GroupData.allGroups[0],
+      );
+      if (mounted) setState(() { currentGroup = savedGroup; });
+    }
+    _loadInitialData();
+  }
+
+  void _loadInitialData() {
+    YouTubeService().init(currentGroup).then((_) {
+      if (mounted) {
+        setState(() {});
+        _precacheThumbnails();
       }
-      if (mounted) setState(() {});
+    });
+  }
+
+  void _precacheThumbnails() {
+    // 在背景預先載入所有縮圖存入快取，讓結果卡片彈出時能瞬間顯示
+    for (var episode in YouTubeService.cachedEpisodes) {
+      if (episode.thumbnailUrl.startsWith('http')) {
+        precacheImage(NetworkImage(episode.thumbnailUrl), context).catchError((_) {
+          // 忽略個別圖片預載失敗的錯誤，避免影響主執行緒
+        });
+      }
+    }
+  }
+
+  Future<void> _handleGroupChange(KPopGroup group) async {
+    if (group.id == currentGroup.id) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_selected_group_id', group.id);
+    HapticFeedback.mediumImpact();
+    setState(() {
+      currentGroup = group;
+      _selectedVideo = null;
+      _highlightedIndex = null;
+      _currentRotation = 0.0;
+    });
+    YouTubeService().init(currentGroup).then((_) { 
+      if (mounted) {
+        setState(() {}); 
+        _precacheThumbnails();
+      }
     });
   }
 
@@ -48,125 +93,121 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
   void _startSpin() {
     final data = YouTubeService.cachedEpisodes;
     if (_controller.isAnimating || data.isEmpty) return;
-
-    setState(() { 
-      _selectedVideo = null; 
-      _highlightedIndex = null; 
-    });
-
+    setState(() { _selectedVideo = null; _highlightedIndex = null; });
     final picked = data[math.Random().nextInt(data.length)];
-    final categories = YouTubeService.playlistConfigs.keys.toList();
+    final categories = currentGroup.playlistConfigs.keys.toList();
     int catIdx = categories.indexOf(picked.category);
-
     double sectorAngle = 2 * math.pi / categories.length;
     double randomOffset = (math.Random().nextDouble() * 0.6 + 0.2) * sectorAngle;
     double targetRotation = (12 * math.pi) + (1.5 * math.pi) - (catIdx * sectorAngle) - randomOffset;
-
     _animation = Tween<double>(begin: _currentRotation % (2 * math.pi), end: targetRotation)
         .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCirc));
-
     _controller.forward(from: 0.0).then((_) {
-      setState(() {
-        _currentRotation = targetRotation;
-        _selectedVideo = picked;
-        _highlightedIndex = catIdx;
-      });
+      HapticFeedback.heavyImpact();
+      setState(() { _currentRotation = targetRotation; _selectedVideo = picked; _highlightedIndex = catIdx; });
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final rouletteSize = math.min(screenWidth * 0.82, 350.0);
+    final hubSize = rouletteSize * 0.28;
+
     return Scaffold(
+      backgroundColor: Colors.black, // 避免系統預設白底在邊緣露出
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      // 🚀 關鍵修正 2：延伸背景至全螢幕（含瀏海區域）
       body: Stack(
         children: [
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFF7CAC9), Color(0xFF92A8D1)],
+          // 背景層：不被 SafeArea 限制，實現全屏浸潤
+          Positioned.fill(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 800),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: currentGroup.themeColors,
+                ),
               ),
             ),
           ),
           
+          // 內容層：使用 SafeArea 保護文字與 UI
           SafeArea(
+            bottom: false, // 讓背景延伸到導覽條下方
             child: Column(
               children: [
-                const SizedBox(height: 200), 
-                Center(
-                  child: Text(
-                    "今天 GOING 到哪 👀",
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 22,
-                      color: const Color(0xFF785655),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 0), 
-                
+                const SizedBox(height: 10),
+                _buildGroupBar(),
                 Expanded(
-                  flex: 3,
-                  child: Center(
-                    child: Stack(
-                      alignment: Alignment.center,
-                      clipBehavior: Clip.none,
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Column(
                       children: [
-                        // 1. 會旋轉的輪盤層
-                        AnimatedBuilder(
-                          animation: _animation,
-                          builder: (context, _) => Transform.rotate(
-                            angle: _controller.isAnimating ? _animation.value : _currentRotation,
-                            child: Container(
-                              width: 346, height: 346,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(color: const Color(0xFF785655).withOpacity(0.12), blurRadius: 40, offset: const Offset(0, 20)),
-                                ],
-                              ),
-                              child: CustomPaint(
-                                painter: VividKaleidoscopePainter(),
+                        const SizedBox(height: 35),
+                        Text(
+                          currentGroup.id == 'svt' ? "今天 GOING 到哪 👀" : "今天 RUN 到哪 🏃‍♂️",
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.bold, fontSize: 24, color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 30),
+                        
+                        // 🚀 關鍵修正 1：整合輪盤與箭頭
+                        Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // 1. 輪盤本體
+                            AnimatedBuilder(
+                              animation: _animation,
+                              builder: (context, _) => Transform.rotate(
+                                angle: _controller.isAnimating ? _animation.value : _currentRotation,
+                                child: Container(
+                                  width: rouletteSize,
+                                  height: rouletteSize,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle, // 移除 boxShadow，解決黑色陰影透出導致的「灰色蒙版」問題
+                                  ),
+                                  child: CustomPaint(
+                                    // 🚀 關鍵修正 3：傳遞團體色用於外圈漸層
+                                    painter: VividKaleidoscopePainter(themeColors: currentGroup.themeColors),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                            
+                            // 2. 指針與中心 Logo (黏著設計)
+                            if (_highlightedIndex != null)
+                              IgnorePointer(child: SizedBox(width: rouletteSize, height: rouletteSize, child: CustomPaint(painter: StaticLaserPainter()))),
+                            
+                            // 3. 箭頭：再次放大尺寸並調整位置以黏著中心 Hub
+                            Positioned(
+                              top: (rouletteSize / 2) - (hubSize / 2) - 46, // 配合放大的尺寸調整偏移量，保持貼合
+                              child: const RotatedBox(
+                                quarterTurns: 2, // 旋轉 180 度
+                                child: Icon(Icons.arrow_drop_down, size: 100, color: Colors.black),
+                              ),
+                            ),
+                            
+                            GestureDetector(
+                              onTap: _startSpin,
+                              child: _buildCenterHub(hubSize),
+                            ),
+                          ],
                         ),
                         
-                        // 2. 🚀 固定不動的發光雷射層 (只有停止時顯示，且固定在正上方)
-                        if (_highlightedIndex != null)
-                          IgnorePointer(
-                            child: SizedBox(
-                              width: 346, height: 346,
-                              child: CustomPaint(
-                                painter: StaticLaserPainter(),
-                              ),
-                            ),
-                          ),
-
-                        // 3. 定位圖標 (黑色指標)
-                        Positioned(
-                          top: 88, 
-                          child: const Icon(Icons.arrow_drop_up, size: 80, color: Colors.black),
+                        const SizedBox(height: 25), 
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 600),
+                          child: _selectedVideo == null 
+                              ? const SizedBox(height: 120) 
+                              : _buildGlassResultCard(_selectedVideo!),
                         ),
-
-                        // 4. 中心按鈕 (Logo)
-                        GestureDetector(
-                          onTap: _startSpin,
-                          behavior: HitTestBehavior.opaque, 
-                          child: _buildCenterHub(),
-                        ),
+                        const SizedBox(height: 50), 
                       ],
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Transform.translate(
-                    offset: const Offset(0, -40), 
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 600),
-                      child: _selectedVideo == null ? const SizedBox() : _buildGlassResultCard(_selectedVideo!),
                     ),
                   ),
                 ),
@@ -178,73 +219,93 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildCenterHub() {
-    return Container(
-      width: 90, height: 90,
-      decoration: BoxDecoration(
-        color: Colors.white, 
-        shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: const Color(0xFF785655).withOpacity(0.15), blurRadius: 30)],
-      ),
-      child: ClipOval(
-        child: Image.asset(
-          'assets/svt_logo.jpg', 
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.favorite, color: Color(0xFFF7CAC9))),
-        ),
+  Widget _buildGroupBar() {
+    return SizedBox(
+      height: 85,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: GroupData.allGroups.length,
+        itemBuilder: (context, index) {
+          final group = GroupData.allGroups[index];
+          bool isSelected = group.id == currentGroup.id;
+          return GestureDetector(
+            onTap: () => _handleGroupChange(group),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 18),
+              child: Column(
+                children: [
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 300),
+                    opacity: isSelected ? 1.0 : 0.4,
+                    child: CircleAvatar(radius: 28, backgroundColor: Colors.transparent, backgroundImage: AssetImage(group.logoPath)),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(group.name, style: GoogleFonts.plusJakartaSans(fontSize: 10, color: Colors.white, fontWeight: isSelected ? FontWeight.w800 : FontWeight.normal)),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
+  Widget _buildCenterHub(double size) {
+    return Container(
+      width: size, height: size,
+      decoration: const BoxDecoration(shape: BoxShape.circle),
+      child: ClipOval(child: Image.asset(currentGroup.logoPath, fit: BoxFit.contain)),
+    );
+  }
+
   Widget _buildGlassResultCard(Episode video) {
-    final cleanedTitle = video.title.replaceFirst(RegExp(r'\[.*?\]\s*'), '').trim();
+    final prefixRegex = RegExp(r'^(RUN\s*BTS|GOING\s*SEVENTEEN)[!\s-]*', caseSensitive: false);
+    String cleanedTitle = video.title.replaceFirst(RegExp(r'\[.*?\]\s*'), '').replaceFirst(prefixRegex, '').trim();
+    String displayCategory = currentGroup.id == 'svt' ? "GOING SEVENTEEN" : "RUN BTS";
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24),
+      margin: const EdgeInsets.symmetric(horizontal: 22),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(28),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 21),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.4),
-              borderRadius: BorderRadius.circular(32),
-              border: Border.all(color: Colors.white.withOpacity(0.4)),
+              color: Colors.white.withOpacity(0.35),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white.withOpacity(0.2)),
             ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center, 
               children: [
                 Expanded(
-                  flex: 45,
+                  flex: 40,
                   child: AspectRatio(
                     aspectRatio: 16 / 9,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4))],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Image.network(video.thumbnailUrl, fit: BoxFit.cover),
-                      ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.network(video.thumbnailUrl, fit: BoxFit.cover),
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 14),
                 Expanded(
-                  flex: 55,
+                  flex: 60,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(video.category.toUpperCase(), 
-                        style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w800, color: const Color(0xFF785655))),
-                      const SizedBox(height: 6),
+                      Text(displayCategory, 
+                        style: GoogleFonts.plusJakartaSans(fontSize: 9, fontWeight: FontWeight.w800, color: const Color(0xFF37474F), letterSpacing: 0.8)),
+                      const SizedBox(height: 5),
                       Text(cleanedTitle, 
-                        style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.bold, height: 1.2, color: Colors.black87), 
+                        style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.bold, height: 1.2, color: Colors.white).copyWith(
+                          fontFamilyFallback: [GoogleFonts.notoSansKr().fontFamily!, 'sans-serif'],
+                        ), 
                         maxLines: 2, overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       _buildWatchButton(video.youtubeUrl),
                     ],
                   ),
@@ -261,18 +322,18 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
     return GestureDetector(
       onTap: () => launchUrl(Uri.parse(url)),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(99),
-          gradient: const LinearGradient(colors: [Color(0xFF785655), Color(0xFF495F84)]),
+          gradient: LinearGradient(colors: currentGroup.themeColors),
+          boxShadow: [BoxShadow(color: currentGroup.themeColors.first.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))],
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.play_circle_filled, color: Colors.white, size: 16),
-            const SizedBox(width: 6),
-            const Text("WATCH ON YOUTUBE", 
-              style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+            Icon(Icons.play_arrow_rounded, size: 16, color: Colors.white),
+            SizedBox(width: 4),
+            Text("WATCH ON YOUTUBE", style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
           ],
         ),
       ),
@@ -280,73 +341,56 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
   }
 }
 
-// 🚀 獨立繪圖器：負責在 0 度位置繪製固定不動的 2 度極細雷射光束
 class StaticLaserPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
     
-    const glowWidthRadians = 2.0 * (math.pi / 180); // 精確 2 度
-    // Flutter 坐標系中，正上方 (12點鐘方向) 為 -math.pi / 2
-    const startAngle = -math.pi / 2 - (glowWidthRadians / 2);
+    // 外圈描邊寬度為 5，因此半徑減 5 往內縮，避開外圈
+    final radius = (size.width / 2) - 5.0;
+    
+    // 加入裁切，確保發光的邊緣絕對不會暈染並覆蓋到輪盤的邊線
+    canvas.clipPath(Path()..addOval(Rect.fromCircle(center: center, radius: radius)));
 
-    final glowPaint = Paint()
-      ..color = Colors.white.withOpacity(0.98)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6) 
-      ..style = PaintingStyle.fill;
-    
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      startAngle,
-      glowWidthRadians,
-      true,
-      glowPaint
-    );
+    final glowPaint = Paint()..color = Colors.white.withOpacity(0.95)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), -math.pi / 2 - 0.03, 0.06, true, glowPaint);
   }
-
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class VividKaleidoscopePainter extends CustomPainter {
+  final List<Color> themeColors;
+  VividKaleidoscopePainter({required this.themeColors});
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2;
-    
-    const Color roseQuartz = Color(0xFFF7CAC9);
-    const Color serenity = Color(0xFF92A8D1);
 
-    final List<Color> vividPalette = [
-      const Color(0xFFFF8A80), const Color(0xFF80CBC4), const Color(0xFFFFD54F),
-      const Color(0xFF4FC3F7), const Color(0xFFBA68C8),
-    ];
-
-    // 輪盤邊框
-    final borderPaint = Paint()
+    // 🚀 關鍵修正 3：繪製應援色漸層外環
+    final rimPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..shader = const SweepGradient(
-        colors: [roseQuartz, serenity, roseQuartz],
+      ..strokeWidth = 5.0
+      ..shader = SweepGradient(
+        colors: [...themeColors, themeColors.first],
       ).createShader(Rect.fromCircle(center: center, radius: radius));
-    canvas.drawCircle(center, radius - 1, borderPaint);
+    
+    canvas.drawCircle(center, radius - 2.5, rimPaint);
 
-    // 放射線條
-    double innerStart = 45.0; 
+    // 內部裝飾線
     for (int i = 0; i < 120; i++) {
       final paint = Paint()
-        ..color = vividPalette[i % vividPalette.length].withOpacity(0.7)
-        ..strokeWidth = 2.0;
+        ..color = Colors.white.withOpacity(i % 2 == 0 ? 0.25 : 0.05) // 降低線條不透明度，讓背景漸層更清晰
+        ..strokeWidth = 1.5;
       double angle = i * (2 * math.pi / 120);
       canvas.drawLine(
-        center + Offset.fromDirection(angle, innerStart), 
-        center + Offset.fromDirection(angle, radius - 4), 
+        center + Offset.fromDirection(angle, radius * 0.28), 
+        center + Offset.fromDirection(angle, radius - 8), 
         paint
       );
     }
   }
-
   @override
   bool shouldRepaint(VividKaleidoscopePainter old) => true;
 }

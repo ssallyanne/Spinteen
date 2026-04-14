@@ -22,6 +22,7 @@ dependencies:
   flutter_dotenv: ^5.1.0
   # iOS 風格圖標
   cupertino_icons: ^1.0.6
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:
@@ -35,7 +36,7 @@ flutter:
   # 如果你要在輪盤中心放 Logo，必須在這裡聲明路徑
   assets:
     - assets/svt_logo.jpg
-    - assets/youtube_icon.png
+    - assets/BTS_logo.png
     - .env
     # 你可以把 300 筆影片數據存在 JSON 裡讀取
     # - assets/data.json 
