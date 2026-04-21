@@ -12,15 +12,29 @@ class Episode {
     required this.youtubeUrl,
     required this.thumbnailUrl,
   });
+
+  // 🚀 加入 JSON 轉換，以便本地快取
+  Map<String, dynamic> toJson() => {
+    'title': title,
+    'category': category,
+    'youtubeUrl': youtubeUrl,
+    'thumbnailUrl': thumbnailUrl,
+  };
+
+  factory Episode.fromJson(Map<String, dynamic> json) => Episode(
+    title: json['title'] ?? '',
+    category: json['category'] ?? '',
+    youtubeUrl: json['youtubeUrl'] ?? '',
+    thumbnailUrl: json['thumbnailUrl'] ?? '',
+  );
 }
 
-// 🚀 新增這個 KPopGroup 類別
 class KPopGroup {
   final String id;
   final String name;
   final String logoPath;
   final List<Color> themeColors; 
-  final Map<String, List<String>> playlistConfigs; // 類別名稱 : 播放清單 ID 清單
+  final Map<String, List<String>> playlistConfigs; 
   final String shareTag;
 
   KPopGroup({

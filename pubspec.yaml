@@ -20,7 +20,8 @@ dependencies:
   http: ^1.1.0
   google_fonts: ^6.2.1
   flutter_dotenv: ^5.1.0
-  # iOS 風格圖標
+  # 圖片快取強化
+  cached_network_image: ^3.3.1
   cupertino_icons: ^1.0.6
   shared_preferences: ^2.5.3
 

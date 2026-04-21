@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'models.dart';
 import 'group_data.dart';
 import 'youtube_service.dart';
@@ -15,9 +16,15 @@ class RoulettePage extends StatefulWidget {
   State<RoulettePage> createState() => _RoulettePageState();
 }
 
-class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderStateMixin {
+class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMixin {
   late AnimationController _controller;
+  late AnimationController _bgController;
+  late AnimationController _pulseController;
+  
   late Animation<double> _animation;
+  late Animation<Alignment> _bgBegin;
+  late Animation<Alignment> _bgEnd;
+  
   double _currentRotation = 0.0;
   Episode? _selectedVideo;
   int? _highlightedIndex;
@@ -29,6 +36,13 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
     super.initState();
     _controller = AnimationController(vsync: this, duration: const Duration(seconds: 4));
     _animation = Tween<double>(begin: 0, end: 0).animate(_controller);
+    
+    _bgController = AnimationController(vsync: this, duration: const Duration(seconds: 15))..repeat(reverse: true);
+    _bgBegin = Tween<Alignment>(begin: Alignment.topLeft, end: Alignment.bottomLeft).animate(_bgController);
+    _bgEnd = Tween<Alignment>(begin: Alignment.bottomRight, end: Alignment.topRight).animate(_bgController);
+
+    _pulseController = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000))..repeat(reverse: true);
+
     _initApp();
   }
 
@@ -55,12 +69,9 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
   }
 
   void _precacheThumbnails() {
-    // 在背景預先載入所有縮圖存入快取，讓結果卡片彈出時能瞬間顯示
     for (var episode in YouTubeService.cachedEpisodes) {
       if (episode.thumbnailUrl.startsWith('http')) {
-        precacheImage(NetworkImage(episode.thumbnailUrl), context).catchError((_) {
-          // 忽略個別圖片預載失敗的錯誤，避免影響主執行緒
-        });
+        precacheImage(CachedNetworkImageProvider(episode.thumbnailUrl), context).catchError((_) {});
       }
     }
   }
@@ -87,6 +98,8 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
   @override
   void dispose() {
     _controller.dispose();
+    _bgController.dispose();
+    _pulseController.dispose();
     super.dispose();
   }
 
@@ -94,14 +107,20 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
     final data = YouTubeService.cachedEpisodes;
     if (_controller.isAnimating || data.isEmpty) return;
     setState(() { _selectedVideo = null; _highlightedIndex = null; });
+    
     final picked = data[math.Random().nextInt(data.length)];
+    double randomLoops = 10.0 + math.Random().nextInt(5).toDouble();
     final categories = currentGroup.playlistConfigs.keys.toList();
     int catIdx = categories.indexOf(picked.category);
+    if (catIdx == -1) catIdx = 0;
+    
     double sectorAngle = 2 * math.pi / categories.length;
-    double randomOffset = (math.Random().nextDouble() * 0.6 + 0.2) * sectorAngle;
-    double targetRotation = (12 * math.pi) + (1.5 * math.pi) - (catIdx * sectorAngle) - randomOffset;
+    double randomOffsetInSector = (math.Random().nextDouble() * 0.7 + 0.15) * sectorAngle;
+    double targetRotation = (randomLoops * math.pi) + (1.5 * math.pi) - (catIdx * sectorAngle) - randomOffsetInSector;
+    
     _animation = Tween<double>(begin: _currentRotation % (2 * math.pi), end: targetRotation)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCirc));
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutQuart));
+    
     _controller.forward(from: 0.0).then((_) {
       HapticFeedback.heavyImpact();
       setState(() { _currentRotation = targetRotation; _selectedVideo = picked; _highlightedIndex = catIdx; });
@@ -115,29 +134,27 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
     final hubSize = rouletteSize * 0.28;
 
     return Scaffold(
-      backgroundColor: Colors.black, // 避免系統預設白底在邊緣露出
+      backgroundColor: Colors.black,
       extendBody: true,
       extendBodyBehindAppBar: true,
-      // 🚀 關鍵修正 2：延伸背景至全螢幕（含瀏海區域）
       body: Stack(
         children: [
-          // 背景層：不被 SafeArea 限制，實現全屏浸潤
           Positioned.fill(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 800),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: currentGroup.themeColors,
+            child: AnimatedBuilder(
+              animation: _bgController,
+              builder: (context, _) => Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: _bgBegin.value,
+                    end: _bgEnd.value,
+                    colors: currentGroup.themeColors,
+                  ),
                 ),
               ),
             ),
           ),
-          
-          // 內容層：使用 SafeArea 保護文字與 UI
           SafeArea(
-            bottom: false, // 讓背景延伸到導覽條下方
+            bottom: false,
             child: Column(
               children: [
                 const SizedBox(height: 10),
@@ -155,12 +172,9 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
                           ),
                         ),
                         const SizedBox(height: 30),
-                        
-                        // 🚀 關鍵修正 1：整合輪盤與箭頭
                         Stack(
                           alignment: Alignment.center,
                           children: [
-                            // 1. 輪盤本體
                             AnimatedBuilder(
                               animation: _animation,
                               builder: (context, _) => Transform.rotate(
@@ -168,37 +182,33 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
                                 child: Container(
                                   width: rouletteSize,
                                   height: rouletteSize,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle, // 移除 boxShadow，解決黑色陰影透出導致的「灰色蒙版」問題
-                                  ),
+                                  decoration: const BoxDecoration(shape: BoxShape.circle),
                                   child: CustomPaint(
-                                    // 🚀 關鍵修正 3：傳遞團體色用於外圈漸層
                                     painter: VividKaleidoscopePainter(themeColors: currentGroup.themeColors),
                                   ),
                                 ),
                               ),
                             ),
-                            
-                            // 2. 指針與中心 Logo (黏著設計)
                             if (_highlightedIndex != null)
                               IgnorePointer(child: SizedBox(width: rouletteSize, height: rouletteSize, child: CustomPaint(painter: StaticLaserPainter()))),
-                            
-                            // 3. 箭頭：再次放大尺寸並調整位置以黏著中心 Hub
                             Positioned(
-                              top: (rouletteSize / 2) - (hubSize / 2) - 46, // 配合放大的尺寸調整偏移量，保持貼合
+                              top: (rouletteSize / 2) - (hubSize / 2) - 46,
                               child: const RotatedBox(
-                                quarterTurns: 2, // 旋轉 180 度
+                                quarterTurns: 2,
                                 child: Icon(Icons.arrow_drop_down, size: 100, color: Colors.black),
                               ),
                             ),
-                            
                             GestureDetector(
                               onTap: _startSpin,
-                              child: _buildCenterHub(hubSize),
+                              child: ScaleTransition(
+                                scale: Tween<double>(begin: 1.0, end: 1.05).animate(
+                                  CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+                                ),
+                                child: _buildCenterHub(hubSize),
+                              ),
                             ),
                           ],
                         ),
-                        
                         const SizedBox(height: 25), 
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 600),
@@ -264,53 +274,82 @@ class _RoulettePageState extends State<RoulettePage> with SingleTickerProviderSt
     String cleanedTitle = video.title.replaceFirst(RegExp(r'\[.*?\]\s*'), '').replaceFirst(prefixRegex, '').trim();
     String displayCategory = currentGroup.id == 'svt' ? "GOING SEVENTEEN" : "RUN BTS";
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 22),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 21),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.35),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white.withOpacity(0.2)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center, 
-              children: [
-                Expanded(
-                  flex: 40,
-                  child: AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Image.network(video.thumbnailUrl, fit: BoxFit.cover),
+    return GestureDetector(
+      onTap: () => launchUrl(Uri.parse(video.youtubeUrl)),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 20),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(30),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.42),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: Colors.white.withOpacity(0.3), width: 1.2),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 15, offset: const Offset(0, 8))
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 42,
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4))
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: CachedNetworkImage(
+                            imageUrl: video.thumbnailUrl,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Container(color: Colors.white10),
+                            errorWidget: (context, url, error) => const Icon(Icons.error_outline, color: Colors.white24),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  flex: 60,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(displayCategory, 
-                        style: GoogleFonts.plusJakartaSans(fontSize: 9, fontWeight: FontWeight.w800, color: const Color(0xFF37474F), letterSpacing: 0.8)),
-                      const SizedBox(height: 5),
-                      Text(cleanedTitle, 
-                        style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.bold, height: 1.2, color: Colors.white).copyWith(
-                          fontFamilyFallback: [GoogleFonts.notoSansKr().fontFamily!, 'sans-serif'],
-                        ), 
-                        maxLines: 2, overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 10),
-                      _buildWatchButton(video.youtubeUrl),
-                    ],
+                  const SizedBox(width: 18),
+                  Expanded(
+                    flex: 58,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            displayCategory, 
+                            style: GoogleFonts.plusJakartaSans(fontSize: 9, fontWeight: FontWeight.w900, color: const Color(0xFF1A1C1E), letterSpacing: 1.0),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          cleanedTitle, 
+                          style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.bold, height: 1.15, color: const Color(0xFF1A1C1E)).copyWith(
+                            fontFamilyFallback: ['Apple SD Gothic Neo', 'Malgun Gothic', 'Nanum Gothic', 'Dotum', 'sans-serif'],
+                          ), 
+                          maxLines: 2, overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildWatchButton(video.youtubeUrl),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -345,13 +384,8 @@ class StaticLaserPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    
-    // 外圈描邊寬度為 5，因此半徑減 5 往內縮，避開外圈
     final radius = (size.width / 2) - 5.0;
-    
-    // 加入裁切，確保發光的邊緣絕對不會暈染並覆蓋到輪盤的邊線
     canvas.clipPath(Path()..addOval(Rect.fromCircle(center: center, radius: radius)));
-
     final glowPaint = Paint()..color = Colors.white.withOpacity(0.95)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
     canvas.drawArc(Rect.fromCircle(center: center, radius: radius), -math.pi / 2 - 0.03, 0.06, true, glowPaint);
   }
@@ -367,27 +401,22 @@ class VividKaleidoscopePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2;
-
-    // 🚀 關鍵修正 3：繪製應援色漸層外環
     final rimPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 5.0
       ..shader = SweepGradient(
-        colors: [...themeColors, themeColors.first],
+        colors: themeColors.length >= 2 ? [...themeColors, themeColors.first] : [themeColors.first, themeColors.first],
       ).createShader(Rect.fromCircle(center: center, radius: radius));
-    
     canvas.drawCircle(center, radius - 2.5, rimPaint);
-
-    // 內部裝飾線
     for (int i = 0; i < 120; i++) {
-      final paint = Paint()
-        ..color = Colors.white.withOpacity(i % 2 == 0 ? 0.25 : 0.05) // 降低線條不透明度，讓背景漸層更清晰
+      final linePaint = Paint()
+        ..color = Colors.white.withOpacity(i % 2 == 0 ? 0.25 : 0.05)
         ..strokeWidth = 1.5;
       double angle = i * (2 * math.pi / 120);
       canvas.drawLine(
         center + Offset.fromDirection(angle, radius * 0.28), 
         center + Offset.fromDirection(angle, radius - 8), 
-        paint
+        linePaint
       );
     }
   }
