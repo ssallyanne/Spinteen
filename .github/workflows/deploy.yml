@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 🚀 這是最關鍵的：明確宣告有寫入權限
+      contents: write
     steps:
       - uses: actions/checkout@v3
 
@@ -17,20 +17,18 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          flutter-version: '3.32.8' # 🚀 強制指定與您本地一致的版本，避免語法衝突
 
       - name: Create .env file
         run: |
           echo "YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}" > .env
-          echo ".env file created"
+          echo "Debug: .env created"
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Build Web
-        run: flutter build web --release --base-href "/Spinteen/" --web-renderer html
-
-      - name: Create .nojekyll
-        run: touch build/web/.nojekyll
+        run: flutter build web --release --base-href "/Spinteen/" # 🚀 移除不相容的 renderer 參數
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
