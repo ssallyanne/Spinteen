@@ -1,11 +1,11 @@
 {
-    "name": "spinteen",
-    "short_name": "spinteen",
+    "name": "17 Spinteen",
+    "short_name": "Spinteen",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#000000",
+    "theme_color": "#F7CAC9",
+    "description": "A random roulette app for SEVENTEEN & BTS variety shows.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
