@@ -23,7 +23,7 @@ jobs:
         run: flutter pub get
 
       - name: Build Web
-        run: flutter build web --release --base-href "/spinteen/"
+        run: flutter build web --release --base-href "/Spinteen/"
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
