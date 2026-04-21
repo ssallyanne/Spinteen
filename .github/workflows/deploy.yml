@@ -28,7 +28,7 @@ jobs:
         run: flutter pub get
 
       - name: Build Web
-        run: flutter build web --release --base-href "/Spinteen/" # 🚀 移除不相容的 renderer 參數
+        run: flutter build web --release --base-href "/Spinteen/" --web-renderer html
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3

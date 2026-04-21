@@ -7,13 +7,13 @@ import 'theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  try {
-    await dotenv.load(fileName: ".env");
-  } catch (e) {
-    debugPrint("環境變數載入失敗，請檢查 .env 檔案: $e");
-  }
+  // 使用 then/catchError 以免卡死初始化
+  dotenv.load(fileName: ".env").then((_) {
+    debugPrint("環境變數載入成功");
+  }).catchError((e) {
+    debugPrint("環境變數載入失敗: $e");
+  });
 
-  // 🚀 2. 啟動名為 SpinteenApp 的元件
   runApp(const SpinteenApp());
 }
 
