@@ -17,16 +17,19 @@ jobs:
           channel: 'stable'
 
       - name: Create .env file
-        run: echo "YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}" > .env
+        run: |
+          echo "YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}" > .env
+          echo ".env file created"
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Build Web
-        run: flutter build web --release --base-href "./"
+        run: flutter build web --release --base-href "./" --web-renderer html
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build/web
+          force_orphan: true # 🚀 強制建立新分支，解決權限問題
