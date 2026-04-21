@@ -1,11 +1,13 @@
 import 'dart:math' as math;
 import 'dart:ui';
+import 'dart:convert'; // 🚀 用於 Base64
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_picker/image_picker.dart'; // 🚀 引入
 import 'models.dart';
 import 'group_data.dart';
 import 'youtube_service.dart';
@@ -28,6 +30,7 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
   double _currentRotation = 0.0;
   Episode? _selectedVideo;
   int? _highlightedIndex;
+  String? _customHubImageBase64; // 🚀 自定義圖片數據
 
   KPopGroup currentGroup = GroupData.allGroups[0];
 
@@ -48,6 +51,8 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
 
   Future<void> _initApp() async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // 1. 載入前次選中的團體
     final String? savedId = prefs.getString('last_selected_group_id');
     if (savedId != null) {
       final savedGroup = GroupData.allGroups.firstWhere(
@@ -56,7 +61,39 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
       );
       if (mounted) setState(() { currentGroup = savedGroup; });
     }
+
+    // 2. 載入自定義頭像
+    _customHubImageBase64 = prefs.getString('custom_hub_${currentGroup.id}');
+    
     _loadInitialData();
+  }
+
+  // 🚀 選取照片功能
+  Future<void> _pickImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery, maxWidth: 500, maxHeight: 500);
+    
+    if (image != null) {
+      final bytes = await image.readAsBytes();
+      final String base64Image = base64Encode(bytes);
+      
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('custom_hub_${currentGroup.id}', base64Image);
+      
+      setState(() {
+        _customHubImageBase64 = base64Image;
+      });
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  // 🚀 清除自定義頭像
+  Future<void> _clearCustomImage() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('custom_hub_${currentGroup.id}');
+    setState(() {
+      _customHubImageBase64 = null;
+    });
   }
 
   void _loadInitialData() {
@@ -80,9 +117,14 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
     if (group.id == currentGroup.id) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('last_selected_group_id', group.id);
+    
+    // 同步載入該團體的頭像
+    final String? savedAvatar = prefs.getString('custom_hub_${group.id}');
+    
     HapticFeedback.mediumImpact();
     setState(() {
       currentGroup = group;
+      _customHubImageBase64 = savedAvatar;
       _selectedVideo = null;
       _highlightedIndex = null;
       _currentRotation = 0.0;
@@ -209,7 +251,29 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
                             ),
                           ],
                         ),
-                        const SizedBox(height: 25), 
+
+                        // 🚀 自定義頭像工具列
+                        Padding(
+                          padding: const EdgeInsets.only(top: 20),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              TextButton.icon(
+                                onPressed: _pickImage,
+                                icon: const Icon(Icons.add_a_photo_rounded, color: Colors.white70, size: 16),
+                                label: Text("更換中心頭像", style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 12)),
+                              ),
+                              if (_customHubImageBase64 != null)
+                                IconButton(
+                                  onPressed: _clearCustomImage,
+                                  icon: const Icon(Icons.refresh_rounded, color: Colors.white38, size: 16),
+                                  tooltip: "還原預設 Logo",
+                                ),
+                            ],
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 15), 
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 600),
                           child: _selectedVideo == null 
@@ -265,7 +329,11 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
     return Container(
       width: size, height: size,
       decoration: const BoxDecoration(shape: BoxShape.circle),
-      child: ClipOval(child: Image.asset(currentGroup.logoPath, fit: BoxFit.contain)),
+      child: ClipOval(
+        child: _customHubImageBase64 != null
+            ? Image.memory(base64Decode(_customHubImageBase64!), fit: BoxFit.cover) // 🚀 顯示自定義照片
+            : Image.asset(currentGroup.logoPath, fit: BoxFit.contain), // 🚀 顯示預設 Logo
+      ),
     );
   }
 
