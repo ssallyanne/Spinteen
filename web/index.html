@@ -1,75 +1,60 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <base href="$FLUTTER_BASE_HREF">
+  <base href="/Spinteen/">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="description" content="A random roulette app for SEVENTEEN & BTS variety shows.">
 
   <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="17 Spinteen">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <link rel="icon" type="image/png" href="favicon.png"/>
-
   <title>17 Spinteen</title>
   <link rel="manifest" href="manifest.json">
+  
   <style>
-    body {
-      background-color: #000000;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
-    }
+    body { background-color: #000000; margin: 0; overflow: hidden; font-family: sans-serif; }
     .loading-container {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      width: 100vw;
-      background-color: #000000;
-      position: absolute;
-      top: 0;
-      left: 0;
-      z-index: 9999;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      height: 100vh; width: 100vw; color: white;
     }
     .spinner {
-      width: 40px;
-      height: 40px;
-      border: 4px solid rgba(255, 255, 255, 0.1);
-      border-left-color: #F7CAC9;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
+      width: 40px; height: 40px; border: 4px solid rgba(255, 255, 255, 0.1);
+      border-left-color: #F7CAC9; border-radius: 50%; animation: spin 1s linear infinite;
     }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .retry-btn {
+      margin-top: 20px; padding: 10px 20px; background: #333; color: white;
+      border-radius: 20px; border: 1px solid #555; display: none; font-size: 14px;
     }
   </style>
 </head>
 <body>
   <div id="loading" class="loading-container">
     <div class="spinner"></div>
+    <div id="retry" class="retry-btn" onclick="location.reload(true)">載入過久？點此刷新</div>
   </div>
 
-  <!-- 🚀 使用最穩定的 legacy 載入方式，解決手機黑屏問題 -->
   <script src="flutter.js" defer></script>
   <script>
+    // 10 秒後顯示刷新按鈕
+    setTimeout(function() {
+      document.getElementById('retry').style.display = 'block';
+    }, 10000);
+
     window.addEventListener('load', function() {
       _flutter.loader.loadEntrypoint({
         onEntrypointLoaded: function(engineInitializer) {
           engineInitializer.initializeEngine({
-            // 🚀 強制使用 HTML 渲染器，保證手機相容性
-            renderer: "html",
+            renderer: "html", // 🚀 鎖死 HTML 渲染器，解決黑屏
+            useColorEmoji: true,
           }).then(function(appRunner) {
             appRunner.runApp();
-            // 當 App 出現時隱藏圓圈
             setTimeout(function() {
               document.getElementById('loading').style.display = 'none';
-            }, 1000);
+            }, 1500);
           });
         }
       });
