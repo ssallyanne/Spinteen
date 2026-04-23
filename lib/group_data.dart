@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'models.dart';
 
 class GroupData {
+  static final List<String> seventeenMembers = [
+    'S.COUPS', 'JEONGHAN', 'JOSHUA', 'JUN', 'HOSHI', 'WONWOO', 'WOOZI', 
+    'THE8', 'MINGYU', 'DK', 'SEUNGKWAN', 'VERNON', 'DINO'
+  ];
+
   static final List<KPopGroup> allGroups = [
     // 1. SEVENTEEN
     KPopGroup(
