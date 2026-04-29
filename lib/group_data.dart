@@ -8,31 +8,29 @@ class GroupData {
   ];
 
   static final List<KPopGroup> allGroups = [
-    // 1. SEVENTEEN
+    // 1. SEVENTEEN 成為唯一的主角
     KPopGroup(
       id: 'svt',
       name: 'SEVENTEEN',
       logoPath: 'assets/svt_logo.jpg',
-      themeColors: [const Color(0xFFF7CAC9), const Color(0xFF92A8D1)],
-      shareTag: '#Going_Seventeen',
+      themeColors: [const Color(0xFFF7CAC9), const Color(0xFF92A8D1)], // 石英粉與寧靜藍
+      shareTag: '#going_seventeen',
       playlistConfigs: {
-        'Going': [
-          'PLk_UmMfvZDx21Z9eEQ9DcIlUfZp1uwEup', // 最新 GOING 系列
-          'PLk_UmMfvZDx2-r7Kt-k2GjtQcTecKAB6p', // 2019 系列
-          'PLk_UmMfvZDx1Ug2GQ5NCijKz7Q3pmZLlT', // 2020 系列
+        'Going 2024': [
+          'PLk_UmMfvZDx21Z9eEQ9DcIlUfZp1uwEup', // 2024
         ],
-      },
-    ),
-    // 2. BTS
-    KPopGroup(
-      id: 'bts',
-      name: 'BTS',
-      logoPath: 'assets/BTS_logo.png',
-      themeColors: [const Color(0xFFB37EB5), const Color(0xFF87588E)],
-      shareTag: '#runbts',
-      playlistConfigs: {
-        'Run': [
-          'PL5hrGMysD_GsFYwSFDWDyUApfpHEwTDhE', // 官方 RUN BTS 完整清單
+        'Going 2023': [
+          'PLk_UmMfvZDx2-r7Kt-k2GjtQcTecKAB6p', // 2023
+        ],
+        'Going 2022': [
+          'PLk_UmMfvZDx1Ug2GQ5NCijKz7Q3pmZLlT', // 2022
+        ],
+        'Going 2021': [
+          'PLk_UmMfvZDx12H_R696r0Nf_xG0T-uS4D', // 2021
+        ],
+        'Going 2020': [
+          'PLk_UmMfvZDx2f_f-0L6i9A37S4fW_O35V', // 2020 Part 1
+          'PLk_UmMfvZDx3Xk-fC1-5G6438DIBI5h-R', // 2020 Part 2
         ],
       },
     ),

@@ -7,7 +7,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:image_picker/image_picker.dart';
 import 'models.dart';
 import 'group_data.dart';
 import 'youtube_service.dart';
@@ -22,6 +21,7 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
   late AnimationController _controller;
   late AnimationController _bgController;
   late AnimationController _pulseController;
+  late PageController _cardPageController;
   
   late Animation<double> _animation;
   late Animation<Alignment> _bgBegin;
@@ -31,10 +31,27 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
   Episode? _selectedVideo;
   int? _highlightedIndex;
   
-  String? _customHubImageBase64; // 用於存放上傳的照片
-  String? _selectedMemberName; // 🚀 用於存放選中的 MINITEEN 名字
+  String? _customHubImageBase64;
+  String? _selectedMemberName;
 
   KPopGroup currentGroup = GroupData.allGroups[0];
+  final int _infiniteCount = 10000;
+
+  final Map<String, Color> _memberColors = {
+    'S.COUPS': const Color(0xFFA9B7C1),
+    'JEONGHAN': const Color(0xFFA58ED4),
+    'JOSHUA': const Color(0xFF9ABEC2),
+    'JUN': const Color(0xFFB7ACDE),
+    'HOSHI': const Color(0xFFEBE1B5),
+    'WONWOO': const Color(0xFFE8DEC8),
+    'WOOZI': const Color(0xFF99D1F2),
+    'THE8': const Color(0xFFD5E8D9),
+    'MINGYU': const Color(0xFFFBC68B),
+    'DK': const Color(0xFFFF9A7B),
+    'SEUNGKWAN': const Color(0xFFA9B7C1),
+    'VERNON': const Color(0xFF878A8A),
+    'DINO': const Color(0xFFF9BCB2),
+  };
 
   @override
   void initState() {
@@ -47,125 +64,46 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
     _bgEnd = Tween<Alignment>(begin: Alignment.bottomRight, end: Alignment.topRight).animate(_bgController);
 
     _pulseController = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000))..repeat(reverse: true);
+    _cardPageController = PageController(viewportFraction: 0.22, initialPage: _infiniteCount ~/ 2);
 
     _initApp();
   }
 
+  Color? _getSelectedMemberColor() {
+    if (_selectedMemberName != null) return _memberColors[_selectedMemberName];
+    return null;
+  }
+
   Future<void> _initApp() async {
     final prefs = await SharedPreferences.getInstance();
-    
     final String? savedId = prefs.getString('last_selected_group_id');
     if (savedId != null) {
-      final savedGroup = GroupData.allGroups.firstWhere(
-        (g) => g.id == savedId,
-        orElse: () => GroupData.allGroups[0],
-      );
+      final savedGroup = GroupData.allGroups.firstWhere((g) => g.id == savedId, orElse: () => GroupData.allGroups[0]);
       if (mounted) setState(() { currentGroup = savedGroup; });
     }
 
     _customHubImageBase64 = prefs.getString('custom_hub_${currentGroup.id}');
     _selectedMemberName = prefs.getString('member_${currentGroup.id}');
     
+    if (_selectedMemberName != null) {
+      int memberIdx = GroupData.seventeenMembers.indexOf(_selectedMemberName!);
+      if (memberIdx != -1) {
+        int targetPage = (_infiniteCount ~/ 2) - ((_infiniteCount ~/ 2) % GroupData.seventeenMembers.length) + memberIdx;
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (_cardPageController.hasClients) _cardPageController.jumpToPage(targetPage);
+        });
+      }
+    }
     _loadInitialData();
   }
 
-  // 🚀 彈出成員選擇面板 (僅限 SEVENTEEN)
-  void _showMemberPicker() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.6,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1C1E).withOpacity(0.95),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-          border: Border.all(color: Colors.white10),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        child: Column(
-          children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 20),
-            Text("選擇守護成員", style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text("選一位成員為您轉動輪盤吧！", style: GoogleFonts.plusJakartaSans(color: Colors.white38, fontSize: 12)),
-            const SizedBox(height: 24),
-            Expanded(
-              child: GridView.builder(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3, crossAxisSpacing: 15, mainAxisSpacing: 20, childAspectRatio: 0.85,
-                ),
-                itemCount: GroupData.seventeenMembers.length,
-                itemBuilder: (context, index) {
-                  final name = GroupData.seventeenMembers[index];
-                  // 圖片路徑假設為 assets/miniteen/name.png
-                  final assetPath = 'assets/miniteen/${name.toLowerCase().replaceAll('.', '')}.png';
-                  bool isSelected = _selectedMemberName == name;
-
-                  return GestureDetector(
-                    onTap: () => _updateSelectedMember(name),
-                    child: Column(
-                      children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: 65, height: 65,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: isSelected ? const Color(0xFFF7CAC9) : Colors.transparent, width: 3),
-                            boxShadow: isSelected ? [BoxShadow(color: const Color(0xFFF7CAC9).withOpacity(0.3), blurRadius: 10)] : [],
-                          ),
-                          child: ClipOval(
-                            child: Image.asset(assetPath, fit: BoxFit.cover, errorBuilder: (c, e, s) => Container(color: Colors.white10, child: const Icon(Icons.face, color: Colors.white24))),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(name, style: GoogleFonts.plusJakartaSans(color: isSelected ? Colors.white : Colors.white60, fontSize: 10, fontWeight: isSelected ? FontWeight.w900 : FontWeight.normal)),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _updateSelectedMember(String name) async {
+    if (_selectedMemberName == name) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('member_${currentGroup.id}', name);
-    await prefs.remove('custom_hub_${currentGroup.id}'); // 切換成員時清除自定義照片
-    
-    setState(() {
-      _selectedMemberName = name;
-      _customHubImageBase64 = null;
-    });
-    HapticFeedback.mediumImpact();
-    Navigator.pop(context);
-  }
-
-  // 原始的上傳照片功能 (保留給其他用途或 BTS)
-  Future<void> _pickImage() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery, maxWidth: 500, maxHeight: 500);
-    if (image != null) {
-      final bytes = await image.readAsBytes();
-      final String base64Image = base64Encode(bytes);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('custom_hub_${currentGroup.id}', base64Image);
-      await prefs.remove('member_${currentGroup.id}');
-      setState(() { _customHubImageBase64 = base64Image; _selectedMemberName = null; });
-      HapticFeedback.mediumImpact();
-    }
-  }
-
-  Future<void> _clearCustom() async {
-    final prefs = await SharedPreferences.getInstance();
     await prefs.remove('custom_hub_${currentGroup.id}');
-    await prefs.remove('member_${currentGroup.id}');
-    setState(() { _customHubImageBase64 = null; _selectedMemberName = null; });
+    HapticFeedback.selectionClick();
+    setState(() { _selectedMemberName = name; _customHubImageBase64 = null; });
   }
 
   void _loadInitialData() {
@@ -182,30 +120,9 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
     }
   }
 
-  Future<void> _handleGroupChange(KPopGroup group) async {
-    if (group.id == currentGroup.id) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('last_selected_group_id', group.id);
-    final String? savedAvatar = prefs.getString('custom_hub_${group.id}');
-    final String? savedMember = prefs.getString('member_${group.id}');
-    
-    HapticFeedback.mediumImpact();
-    setState(() {
-      currentGroup = group;
-      _customHubImageBase64 = savedAvatar;
-      _selectedMemberName = savedMember;
-      _selectedVideo = null;
-      _highlightedIndex = null;
-      _currentRotation = 0.0;
-    });
-    YouTubeService().init(currentGroup).then((_) { 
-      if (mounted) { setState(() {}); _precacheThumbnails(); }
-    });
-  }
-
   @override
   void dispose() {
-    _controller.dispose(); _bgController.dispose(); _pulseController.dispose();
+    _controller.dispose(); _bgController.dispose(); _pulseController.dispose(); _cardPageController.dispose();
     super.dispose();
   }
 
@@ -234,6 +151,7 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
     final screenWidth = MediaQuery.of(context).size.width;
     final rouletteSize = math.min(screenWidth * 0.82, 350.0);
     final hubSize = rouletteSize * 0.28;
+    final Color? activeMemberColor = _getSelectedMemberColor();
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -255,16 +173,14 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
             bottom: false,
             child: Column(
               children: [
-                const SizedBox(height: 10),
-                _buildGroupBar(),
                 Expanded(
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     child: Column(
                       children: [
-                        const SizedBox(height: 35),
+                        const SizedBox(height: 30),
                         Text(
-                          currentGroup.id == 'svt' ? "今天 GOING 到哪 👀" : "今天 RUN 到哪 🏃‍♂️",
+                          "今天 GOING 到哪 👀",
                           style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold, fontSize: 24, color: Colors.white),
                         ),
                         const SizedBox(height: 30),
@@ -278,15 +194,30 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
                                 child: Container(
                                   width: rouletteSize, height: rouletteSize,
                                   decoration: const BoxDecoration(shape: BoxShape.circle),
-                                  child: CustomPaint(painter: VividKaleidoscopePainter(themeColors: currentGroup.themeColors)),
+                                  child: CustomPaint(
+                                    painter: VividKaleidoscopePainter(
+                                      themeColors: currentGroup.themeColors,
+                                      accentColor: activeMemberColor,
+                                    )
+                                  ),
                                 ),
                               ),
                             ),
                             if (_highlightedIndex != null)
                               IgnorePointer(child: SizedBox(width: rouletteSize, height: rouletteSize, child: CustomPaint(painter: StaticLaserPainter()))),
                             Positioned(
-                              top: (rouletteSize / 2) - (hubSize / 2) - 46,
-                              child: const RotatedBox(quarterTurns: 2, child: Icon(Icons.arrow_drop_down, size: 100, color: Colors.black)),
+                              top: (rouletteSize / 2) - (hubSize / 2) - 52, 
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 300),
+                                child: RotatedBox(
+                                  quarterTurns: 2, 
+                                  child: Icon(
+                                    Icons.arrow_drop_down, 
+                                    size: 110,
+                                    color: activeMemberColor ?? Colors.black,
+                                  )
+                                ),
+                              ),
                             ),
                             GestureDetector(
                               onTap: _startSpin,
@@ -297,25 +228,9 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
                             ),
                           ],
                         ),
-
-                        // 🚀 新版工具列：SEVENTEEN 顯示選取器，其餘顯示上傳
-                        Padding(
-                          padding: const EdgeInsets.only(top: 20),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              TextButton.icon(
-                                onPressed: currentGroup.id == 'svt' ? _showMemberPicker : _pickImage,
-                                icon: Icon(currentGroup.id == 'svt' ? Icons.pets_rounded : Icons.add_a_photo_rounded, color: Colors.white70, size: 16),
-                                label: Text(currentGroup.id == 'svt' ? "更換 MINITEEN" : "更換中心頭像", style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 12)),
-                              ),
-                              if (_customHubImageBase64 != null || _selectedMemberName != null)
-                                IconButton(onPressed: _clearCustom, icon: const Icon(Icons.refresh_rounded, color: Colors.white38, size: 16)),
-                            ],
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 15), 
+                        const SizedBox(height: 25),
+                        _buildCardSelector(),
+                        const SizedBox(height: 25), 
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 600),
                           child: _selectedVideo == null ? const SizedBox(height: 120) : _buildGlassResultCard(_selectedVideo!),
@@ -333,62 +248,96 @@ class _RoulettePageState extends State<RoulettePage> with TickerProviderStateMix
     );
   }
 
-  Widget _buildGroupBar() {
-    return SizedBox(
-      height: 85,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: GroupData.allGroups.length,
-        itemBuilder: (context, index) {
-          final group = GroupData.allGroups[index];
-          bool isSelected = group.id == currentGroup.id;
-          return GestureDetector(
-            onTap: () => _handleGroupChange(group),
-            child: Padding(
-              padding: const EdgeInsets.only(right: 18),
-              child: Column(
-                children: [
-                  AnimatedOpacity(
-                    duration: const Duration(milliseconds: 300), opacity: isSelected ? 1.0 : 0.4,
-                    child: CircleAvatar(radius: 28, backgroundColor: Colors.transparent, backgroundImage: AssetImage(group.logoPath)),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(group.name, style: GoogleFonts.plusJakartaSans(fontSize: 10, color: Colors.white, fontWeight: isSelected ? FontWeight.w800 : FontWeight.normal)),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+  Widget _buildCardSelector() {
+    return Column(
+      children: [
+        SizedBox(
+          height: 100,
+          child: PageView.builder(
+            controller: _cardPageController,
+            itemCount: _infiniteCount,
+            onPageChanged: (idx) {
+              final realIdx = idx % GroupData.seventeenMembers.length;
+              _updateSelectedMember(GroupData.seventeenMembers[realIdx]);
+            },
+            physics: const BouncingScrollPhysics(),
+            itemBuilder: (context, index) {
+              final realIdx = index % GroupData.seventeenMembers.length;
+              final name = GroupData.seventeenMembers[realIdx];
+              final assetPath = 'assets/miniteen/${name.toLowerCase().replaceAll('.', '')}.png';
+              bool isSelected = _selectedMemberName == name;
+              final Color activeColor = _memberColors[name] ?? Colors.white;
+              return AnimatedBuilder(
+                animation: _cardPageController,
+                builder: (context, child) {
+                  double value = 1.0;
+                  if (_cardPageController.position.haveDimensions) {
+                    value = _cardPageController.page! - index;
+                    value = (1 - (value.abs() * 0.25)).clamp(0.0, 1.0); // 🚀 平緩縮放：0.25
+                  } else {
+                    value = isSelected ? 1.0 : 0.72; // 🚀 保底大小：0.72
+                  }
+                  return Center(
+                    child: Transform.scale(
+                      scale: Curves.easeOut.transform(value),
+                      child: Opacity(
+                        opacity: value.clamp(0.72, 1.0),
+                        child: GestureDetector(
+                          onTap: () {
+                            _cardPageController.animateToPage(index, duration: const Duration(milliseconds: 450), curve: Curves.easeOutQuart);
+                          },
+                          child: Container(
+                            width: 60, height: 60,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: isSelected ? activeColor : Colors.white12, width: 1.5),
+                              boxShadow: isSelected ? [BoxShadow(color: activeColor.withOpacity(0.2), blurRadius: 10)] : [],
+                            ),
+                            child: ClipOval(child: Image.asset(assetPath, fit: BoxFit.cover, errorBuilder: (c,e,s) => _buildNameBadge(name))),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildCenterHub(double size) {
     Widget displayImage;
-    
     if (_selectedMemberName != null) {
-      // 🚀 顯示 MINITEEN 角色
       final assetPath = 'assets/miniteen/${_selectedMemberName!.toLowerCase().replaceAll('.', '')}.png';
-      displayImage = Image.asset(assetPath, fit: BoxFit.cover, errorBuilder: (c, e, s) => Image.asset(currentGroup.logoPath));
+      displayImage = Image.asset(
+        assetPath, fit: BoxFit.cover, 
+        errorBuilder: (context, error, stackTrace) => _buildNameBadge(_selectedMemberName!),
+      );
     } else if (_customHubImageBase64 != null) {
-      // 🚀 顯示使用者上傳照片
       displayImage = Image.memory(base64Decode(_customHubImageBase64!), fit: BoxFit.cover);
     } else {
-      // 🚀 顯示預設 Logo
       displayImage = Image.asset(currentGroup.logoPath, fit: BoxFit.contain);
     }
+    return Container(width: size, height: size, decoration: const BoxDecoration(shape: BoxShape.circle), child: ClipOval(child: displayImage));
+  }
 
+  Widget _buildNameBadge(String name) {
+    String initial = name.length > 2 ? name.substring(0, 2) : name;
+    final Color badgeColor = _memberColors[name] ?? currentGroup.themeColors.first;
     return Container(
-      width: size, height: size,
-      decoration: const BoxDecoration(shape: BoxShape.circle),
-      child: ClipOval(child: displayImage),
+      decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [badgeColor, badgeColor.withOpacity(0.7)])),
+      alignment: Alignment.center,
+      child: Text(initial, style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22, letterSpacing: -1)),
     );
   }
 
   Widget _buildGlassResultCard(Episode video) {
     final prefixRegex = RegExp(r'^(RUN\s*BTS|GOING\s*SEVENTEEN)[!\s-]*', caseSensitive: false);
     String cleanedTitle = video.title.replaceFirst(RegExp(r'\[.*?\]\s*'), '').replaceFirst(prefixRegex, '').trim();
-    String displayCategory = currentGroup.id == 'svt' ? "GOING SEVENTEEN" : "RUN BTS";
+    String displayCategory = "GOING SEVENTEEN";
     return GestureDetector(
       onTap: () => launchUrl(Uri.parse(video.youtubeUrl)),
       child: Container(
@@ -458,19 +407,38 @@ class StaticLaserPainter extends CustomPainter {
 
 class VividKaleidoscopePainter extends CustomPainter {
   final List<Color> themeColors;
-  VividKaleidoscopePainter({required this.themeColors});
+  final Color? accentColor; 
+  VividKaleidoscopePainter({required this.themeColors, this.accentColor});
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2;
-    final rimPaint = Paint()..style = PaintingStyle.stroke..strokeWidth = 5.0..shader = SweepGradient(colors: themeColors.length >= 2 ? [...themeColors, themeColors.first] : [themeColors.first, themeColors.first]).createShader(Rect.fromCircle(center: center, radius: radius));
+    
+    // 🚀 1. 繪製底盤 (磨砂白背景)，營造純淨的玻璃質感
+    final diskPaint = Paint()
+      ..color = Colors.white.withOpacity(0.18) // 使用純淨白
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, radius - 3.0, diskPaint);
+
+    final rimPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5.0;
+    if (accentColor == null) {
+      rimPaint.shader = SweepGradient(colors: themeColors.length >= 2 ? [...themeColors, themeColors.first] : [themeColors.first, themeColors.first]).createShader(Rect.fromCircle(center: center, radius: radius));
+    } else {
+      final hsl = HSLColor.fromColor(accentColor!);
+      final brighter = hsl.withLightness((hsl.lightness + 0.15).clamp(0.0, 1.0)).toColor();
+      final darker = hsl.withLightness((hsl.lightness - 0.1).clamp(0.0, 1.0)).toColor();
+      rimPaint.shader = SweepGradient(colors: [darker, accentColor!, brighter, accentColor!, darker]).createShader(Rect.fromCircle(center: center, radius: radius));
+    }
     canvas.drawCircle(center, radius - 2.5, rimPaint);
     for (int i = 0; i < 120; i++) {
-      final linePaint = Paint()..color = Colors.white.withOpacity(i % 2 == 0 ? 0.25 : 0.05)..strokeWidth = 1.5;
+      final Color lineColor = accentColor ?? Colors.white;
+      final linePaint = Paint()..color = lineColor.withOpacity(i % 2 == 0 ? 0.6 : 0.2)..strokeWidth = i % 2 == 0 ? 2.0 : 1.2;
       double angle = i * (2 * math.pi / 120);
       canvas.drawLine(center + Offset.fromDirection(angle, radius * 0.28), center + Offset.fromDirection(angle, radius - 8), linePaint);
     }
   }
   @override
-  bool shouldRepaint(VividKaleidoscopePainter old) => true;
+  bool shouldRepaint(VividKaleidoscopePainter old) => old.accentColor != accentColor;
 }
