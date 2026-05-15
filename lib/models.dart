@@ -36,6 +36,9 @@ class KPopGroup {
   final List<Color> themeColors; 
   final Map<String, List<String>> playlistConfigs; 
   final String shareTag;
+  final List<String> members;
+  final Map<String, Color> memberColors;
+  final String memberAssetPrefix;
 
   KPopGroup({
     required this.id,
@@ -44,5 +47,8 @@ class KPopGroup {
     required this.themeColors,
     required this.playlistConfigs,
     required this.shareTag,
+    required this.members,
+    required this.memberColors,
+    required this.memberAssetPrefix,
   });
 }
